@@ -1,10 +1,23 @@
 -- ==========================================
--- [0] 키 시스템 (Key System) UI 및 인증 로직 (다중 키 지원)
+-- [0] 키 시스템 (Key System) UI 및 인증 로직 (모바일 키보드 호환)
 -- ==========================================
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- PC 및 모바일 실행기 호환을 위한 보호 설정 (토글용)
+local ProtectedGui = (gethui and gethui()) or CoreGui
+
+local function protectAndParent(gui)
+    if protectgui then
+        protectgui(gui)
+    elseif syn and syn.protect_gui then
+        syn.protect_gui(gui)
+    end
+    gui.Parent = ProtectedGui
+end
 
 -- 사용 가능한 인증 키 목록
 local VALID_KEYS = {
@@ -30,15 +43,19 @@ local VALID_KEYS = {
 }
 
 -- 기존 키 UI 중복 방지
-if CoreGui:FindFirstChild("KKHub_KeySystem") then
-    CoreGui.KKHub_KeySystem:Destroy()
+if PlayerGui:FindFirstChild("KKHub_KeySystem") then
+    PlayerGui.KKHub_KeySystem:Destroy()
+end
+if ProtectedGui:FindFirstChild("KKHub_KeySystem") then
+    ProtectedGui.KKHub_KeySystem:Destroy()
 end
 
+-- 모바일 가상 키보드가 정상적으로 뜨도록 PlayerGui에 생성
 local KeyScreenGui = Instance.new("ScreenGui")
 KeyScreenGui.Name = "KKHub_KeySystem"
-KeyScreenGui.Parent = CoreGui
 KeyScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 KeyScreenGui.ResetOnSpawn = false
+KeyScreenGui.Parent = PlayerGui
 
 -- 메인 키 시스템 창
 local MainFrame = Instance.new("Frame")
@@ -89,6 +106,7 @@ KeyTextBox.PlaceholderText = "Enter your key here..."
 KeyTextBox.Text = ""
 KeyTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 KeyTextBox.TextSize = 14
+KeyTextBox.ClearTextOnFocus = false
 
 local BoxCorner = Instance.new("UICorner")
 BoxCorner.CornerRadius = UDim.new(0, 6)
@@ -118,7 +136,6 @@ SubmitButton.MouseButton1Click:Connect(function()
     local enteredKey = KeyTextBox.Text
     local isMatch = false
     
-    -- 입력한 키가 목록에 있는지 확인
     for _, k in ipairs(VALID_KEYS) do
         if enteredKey == k then
             isMatch = true
@@ -128,14 +145,14 @@ SubmitButton.MouseButton1Click:Connect(function()
     
     if isMatch then
         SubmitButton.Text = "인증 성공! 허브를 불러오는 중..."
-        SubmitButton.TextColor3 = Color3.fromRGB(0, 255, 0) -- 초록색 글씨
+        SubmitButton.TextColor3 = Color3.fromRGB(0, 255, 0)
         SubmitButton.BackgroundColor3 = Color3.fromRGB(30, 50, 30)
         task.wait(1)
         keyVerified = true
         KeyScreenGui:Destroy()
     else
         SubmitButton.Text = "다시 시도하세요"
-        SubmitButton.TextColor3 = Color3.fromRGB(255, 60, 60) -- 빨간색 글씨
+        SubmitButton.TextColor3 = Color3.fromRGB(255, 60, 60)
         SubmitButton.BackgroundColor3 = Color3.fromRGB(60, 30, 30)
         task.wait(1.5)
         SubmitButton.Text = "Verify Key"
@@ -144,7 +161,6 @@ SubmitButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- 키가 맞을 때까지 코드 진행 일시 정지
 repeat task.wait(0.1) until keyVerified
 
 -- ==========================================
@@ -153,23 +169,22 @@ repeat task.wait(0.1) until keyVerified
 loadstring(game:HttpGet("https://raw.githubusercontent.com/v889rfdv7z-lang/robloxrival-kkhub/refs/heads/main/robloxrival-kkhub.lua"))()
 
 -- ==========================================
--- [2] 'UI ON / UI OFF' 토글 및 KK HUB 최적화 스크립트
+-- [2] 'UI ON / UI OFF' 토글 및 안정성 최적화 스크립트
 -- ==========================================
 task.spawn(function()
-    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
-    -- 기존 토글 UI 중복 생성 방지
+    if ProtectedGui:FindFirstChild("KKHub_FixedToggle") then
+        ProtectedGui.KKHub_FixedToggle:Destroy()
+    end
     if CoreGui:FindFirstChild("KKHub_FixedToggle") then
         CoreGui.KKHub_FixedToggle:Destroy()
     end
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "KKHub_FixedToggle"
-    ScreenGui.Parent = CoreGui
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.ResetOnSpawn = false
+    protectAndParent(ScreenGui)
 
-    -- 토글 버튼 생성 (요청하신 좌측 위치 및 드래그 기능 적용)
     local ToggleButton = Instance.new("TextButton")
     ToggleButton.Name = "ToggleButton"
     ToggleButton.Parent = ScreenGui
@@ -188,7 +203,6 @@ task.spawn(function()
     UICorner.CornerRadius = UDim.new(0, 6)
     UICorner.Parent = ToggleButton
 
-    -- 드래그 이동 지원
     local dragging, dragStart, startPos
     ToggleButton.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -211,37 +225,42 @@ task.spawn(function()
         end
     end)
 
-    -- Lion UI 창 탐지 및 KK HUB로 이름 변경 함수
+    -- 캐싱을 적용하여 과부하와 튕김 현상 방지
+    local targetGuis = {}
     local function getLionUIElements()
-        local targetFrames = {}
-        for _, root in ipairs({CoreGui, PlayerGui}) do
-            for _, obj in ipairs(root:GetDescendants()) do
-                if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-                    if obj.Text == "Lion UI" then
-                        obj.Text = "KK HUB"
-                        local parent = obj.Parent
-                        while parent and parent ~= root do
-                            if parent:IsA("Frame") and parent.Size.X.Offset > 150 then
-                                table.insert(targetFrames, parent)
-                                break
-                            elseif parent:IsA("ScreenGui") and parent.Name ~= "KKHub_FixedToggle" then
-                                table.insert(targetFrames, parent)
-                                break
+        if #targetGuis > 0 then return targetGuis end
+        for _, root in ipairs({ProtectedGui, CoreGui, PlayerGui}) do
+            local success, descendants = pcall(function()
+                return root:GetDescendants()
+            end)
+            if success and descendants then
+                for _, obj in ipairs(descendants) do
+                    if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+                        if obj.Text == "Lion UI" then
+                            obj.Text = "KK HUB"
+                            local parent = obj.Parent
+                            while parent and parent ~= root do
+                                if parent:IsA("Frame") and parent.Size.X.Offset > 150 then
+                                    table.insert(targetGuis, parent)
+                                    break
+                                elseif parent:IsA("ScreenGui") and parent.Name ~= "KKHub_FixedToggle" then
+                                    table.insert(targetGuis, parent)
+                                    break
+                                end
+                                parent = parent.Parent
                             end
-                            parent = parent.Parent
                         end
                     end
                 end
             end
         end
-        return targetFrames
+        return targetGuis
     end
 
     task.wait(1.5)
-    local targetGuis = getLionUIElements()
+    targetGuis = getLionUIElements()
     local uiVisible = true
 
-    -- 토글 버튼 클릭 이벤트
     ToggleButton.MouseButton1Click:Connect(function()
         uiVisible = not uiVisible
         
@@ -264,4 +283,3 @@ task.spawn(function()
         end
     end)
 end)
-
