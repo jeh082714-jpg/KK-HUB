@@ -1,13 +1,12 @@
 -- ==========================================
--- [0] 키 시스템 (Key System) UI 및 인증 로직 (모바일 키보드 호환)
+-- [0] 키 시스템 (Key System) UI 및 인증 로직 (PC/모바일 통합 + 자동 저장 기능)
 -- ==========================================
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- PC 및 모바일 실행기 호환을 위한 보호 설정 (토글용)
+-- PC 및 모바일 실행기 호환을 위한 보호 설정 (gethui / protectgui 지원)
 local ProtectedGui = (gethui and gethui()) or CoreGui
 
 local function protectAndParent(gui)
@@ -42,124 +41,150 @@ local VALID_KEYS = {
     "KK_HUB_2026Q7M2K9X4P"
 }
 
--- 기존 키 UI 중복 방지
-if PlayerGui:FindFirstChild("KKHub_KeySystem") then
-    PlayerGui.KKHub_KeySystem:Destroy()
-end
-if ProtectedGui:FindFirstChild("KKHub_KeySystem") then
-    ProtectedGui.KKHub_KeySystem:Destroy()
-end
-
--- 모바일 가상 키보드가 정상적으로 뜨도록 PlayerGui에 생성
-local KeyScreenGui = Instance.new("ScreenGui")
-KeyScreenGui.Name = "KKHub_KeySystem"
-KeyScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-KeyScreenGui.ResetOnSpawn = false
-KeyScreenGui.Parent = PlayerGui
-
--- 메인 키 시스템 창
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = KeyScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-MainFrame.BorderColor3 = Color3.fromRGB(100, 100, 255)
-MainFrame.BorderSizePixel = 2
-MainFrame.Position = UDim2.new(0.5, -175, 0.5, -100)
-MainFrame.Size = UDim2.new(0, 350, 0, 200)
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
-UICorner.Parent = MainFrame
-
--- 타이틀
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Parent = MainFrame
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Position = UDim2.new(0, 0, 0, 15)
-TitleLabel.Size = UDim2.new(1, 0, 0, 30)
-TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.Text = "KK HUB - Key System"
-TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 18
-
--- 안내 문구
-local DescLabel = Instance.new("TextLabel")
-DescLabel.Parent = MainFrame
-DescLabel.BackgroundTransparency = 1
-DescLabel.Position = UDim2.new(0, 20, 0, 50)
-DescLabel.Size = UDim2.new(1, -40, 0, 25)
-DescLabel.Font = Enum.Font.Gotham
-DescLabel.Text = "키를 입력하고 인증 버튼을 눌러주세요."
-DescLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-DescLabel.TextSize = 13
-
--- 키 입력 박스 (TextBox)
-local KeyTextBox = Instance.new("TextBox")
-KeyTextBox.Name = "KeyTextBox"
-KeyTextBox.Parent = MainFrame
-KeyTextBox.BackgroundColor3 = Color3.fromRGB(40, 40, 48)
-KeyTextBox.BorderColor3 = Color3.fromRGB(80, 80, 100)
-KeyTextBox.Position = UDim2.new(0, 25, 0, 85)
-KeyTextBox.Size = UDim2.new(1, -50, 0, 40)
-KeyTextBox.Font = Enum.Font.Gotham
-KeyTextBox.PlaceholderText = "Enter your key here..."
-KeyTextBox.Text = ""
-KeyTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-KeyTextBox.TextSize = 14
-KeyTextBox.ClearTextOnFocus = false
-
-local BoxCorner = Instance.new("UICorner")
-BoxCorner.CornerRadius = UDim.new(0, 6)
-BoxCorner.Parent = KeyTextBox
-
--- 인증 버튼 (Submit)
-local SubmitButton = Instance.new("TextButton")
-SubmitButton.Name = "SubmitButton"
-SubmitButton.Parent = MainFrame
-SubmitButton.BackgroundColor3 = Color3.fromRGB(60, 100, 255)
-SubmitButton.BorderSizePixel = 0
-SubmitButton.Position = UDim2.new(0, 25, 0, 135)
-SubmitButton.Size = UDim2.new(1, -50, 0, 40)
-SubmitButton.Font = Enum.Font.GothamBold
-SubmitButton.Text = "Verify Key"
-SubmitButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SubmitButton.TextSize = 14
-
-local BtnCorner = Instance.new("UICorner")
-BtnCorner.CornerRadius = UDim.new(0, 6)
-BtnCorner.Parent = SubmitButton
-
--- 인증 성공 여부 대기 변수
+-- 인증 성공 여부 대기 변수 및 자동 저장 파일 이름
 local keyVerified = false
+local SAVE_FILE = "KKHub_KeyData.txt"
 
-SubmitButton.MouseButton1Click:Connect(function()
-    local enteredKey = KeyTextBox.Text
-    local isMatch = false
-    
-    for _, k in ipairs(VALID_KEYS) do
-        if enteredKey == k then
-            isMatch = true
-            break
+-- 저장된 키가 있는지 확인하여 자동 인증 처리
+if isfile and readfile then
+    local success, content = pcall(function()
+        if isfile(SAVE_FILE) then
+            return readfile(SAVE_FILE)
+        end
+    end)
+    if success and content then
+        for _, k in ipairs(VALID_KEYS) do
+            if content == k then
+                keyVerified = true
+                break
+            end
         end
     end
-    
-    if isMatch then
-        SubmitButton.Text = "인증 성공! 허브를 불러오는 중..."
-        SubmitButton.TextColor3 = Color3.fromRGB(0, 255, 0)
-        SubmitButton.BackgroundColor3 = Color3.fromRGB(30, 50, 30)
-        task.wait(1)
-        keyVerified = true
-        KeyScreenGui:Destroy()
-    else
-        SubmitButton.Text = "다시 시도하세요"
-        SubmitButton.TextColor3 = Color3.fromRGB(255, 60, 60)
-        SubmitButton.BackgroundColor3 = Color3.fromRGB(60, 30, 30)
-        task.wait(1.5)
-        SubmitButton.Text = "Verify Key"
-        SubmitButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        SubmitButton.BackgroundColor3 = Color3.fromRGB(60, 100, 255)
+end
+
+-- 저장된 올바른 키가 없을 때만 키 시스템 UI 생성
+if not keyVerified then
+    -- 기존 키 UI 중복 방지
+    if ProtectedGui:FindFirstChild("KKHub_KeySystem") then
+        ProtectedGui.KKHub_KeySystem:Destroy()
     end
-end)
+    if CoreGui:FindFirstChild("KKHub_KeySystem") then
+        CoreGui.KKHub_KeySystem:Destroy()
+    end
+
+    local KeyScreenGui = Instance.new("ScreenGui")
+    KeyScreenGui.Name = "KKHub_KeySystem"
+    KeyScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    KeyScreenGui.ResetOnSpawn = false
+    protectAndParent(KeyScreenGui)
+
+    -- 메인 키 시스템 창
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Parent = KeyScreenGui
+    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    MainFrame.BorderColor3 = Color3.fromRGB(100, 100, 255)
+    MainFrame.BorderSizePixel = 2
+    MainFrame.Position = UDim2.new(0.5, -175, 0.5, -100)
+    MainFrame.Size = UDim2.new(0, 350, 0, 200)
+
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 8)
+    UICorner.Parent = MainFrame
+
+    -- 타이틀
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Parent = MainFrame
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Position = UDim2.new(0, 0, 0, 15)
+    TitleLabel.Size = UDim2.new(1, 0, 0, 30)
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.Text = "KK HUB - Key System"
+    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleLabel.TextSize = 18
+
+    -- 안내 문구
+    local DescLabel = Instance.new("TextLabel")
+    DescLabel.Parent = MainFrame
+    DescLabel.BackgroundTransparency = 1
+    DescLabel.Position = UDim2.new(0, 20, 0, 50)
+    DescLabel.Size = UDim2.new(1, -40, 0, 25)
+    DescLabel.Font = Enum.Font.Gotham
+    DescLabel.Text = "키를 입력하고 인증 버튼을 눌러주세요."
+    DescLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    DescLabel.TextSize = 13
+
+    -- 키 입력 박스 (TextBox)
+    local KeyTextBox = Instance.new("TextBox")
+    KeyTextBox.Name = "KeyTextBox"
+    KeyTextBox.Parent = MainFrame
+    KeyTextBox.BackgroundColor3 = Color3.fromRGB(40, 40, 48)
+    KeyTextBox.BorderColor3 = Color3.fromRGB(80, 80, 100)
+    KeyTextBox.Position = UDim2.new(0, 25, 0, 85)
+    KeyTextBox.Size = UDim2.new(1, -50, 0, 40)
+    KeyTextBox.Font = Enum.Font.Gotham
+    KeyTextBox.PlaceholderText = "Enter your key here..."
+    KeyTextBox.Text = ""
+    KeyTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    KeyTextBox.TextSize = 14
+
+    local BoxCorner = Instance.new("UICorner")
+    BoxCorner.CornerRadius = UDim.new(0, 6)
+    BoxCorner.Parent = KeyTextBox
+
+    -- 인증 버튼 (Submit)
+    local SubmitButton = Instance.new("TextButton")
+    SubmitButton.Name = "SubmitButton"
+    SubmitButton.Parent = MainFrame
+    SubmitButton.BackgroundColor3 = Color3.fromRGB(60, 100, 255)
+    SubmitButton.BorderSizePixel = 0
+    SubmitButton.Position = UDim2.new(0, 25, 0, 135)
+    SubmitButton.Size = UDim2.new(1, -50, 0, 40)
+    SubmitButton.Font = Enum.Font.GothamBold
+    SubmitButton.Text = "Verify Key"
+    SubmitButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SubmitButton.TextSize = 14
+
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 6)
+    BtnCorner.Parent = SubmitButton
+
+    SubmitButton.MouseButton1Click:Connect(function()
+        local enteredKey = KeyTextBox.Text
+        local isMatch = false
+        
+        for _, k in ipairs(VALID_KEYS) do
+            if enteredKey == k then
+                isMatch = true
+                break
+            end
+        end
+        
+        if isMatch then
+            -- 인증 성공 시 키 파일에 자동 저장
+            if writefile then
+                pcall(function()
+                    writefile(SAVE_FILE, enteredKey)
+                end)
+            end
+
+            SubmitButton.Text = "인증 성공! 허브를 불러오는 중..."
+            SubmitButton.TextColor3 = Color3.fromRGB(0, 255, 0)
+            SubmitButton.BackgroundColor3 = Color3.fromRGB(30, 50, 30)
+            task.wait(1)
+            keyVerified = true
+            KeyScreenGui:Destroy()
+        else
+            SubmitButton.Text = "다시 시도하세요"
+            SubmitButton.TextColor3 = Color3.fromRGB(255, 60, 60)
+            SubmitButton.BackgroundColor3 = Color3.fromRGB(60, 30, 30)
+            task.wait(1.5)
+            SubmitButton.Text = "Verify Key"
+            SubmitButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            SubmitButton.BackgroundColor3 = Color3.fromRGB(60, 100, 255)
+        end
+    end)
+end
 
 repeat task.wait(0.1) until keyVerified
 
@@ -172,6 +197,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/v889rfdv7z-lang/roblo
 -- [2] 'UI ON / UI OFF' 토글 및 안정성 최적화 스크립트
 -- ==========================================
 task.spawn(function()
+    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
     if ProtectedGui:FindFirstChild("KKHub_FixedToggle") then
         ProtectedGui.KKHub_FixedToggle:Destroy()
     end
