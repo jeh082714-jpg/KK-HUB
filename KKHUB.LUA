@@ -1,5 +1,5 @@
 -- ==========================================
--- [0] 키 시스템 (Key System) UI 및 인증 로직 (PC/모바일 통합 + 자동 저장 기능)
+-- [0] 키 시스템 (Key System) UI 및 자동 저장 인증 로직
 -- ==========================================
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -45,7 +45,7 @@ local VALID_KEYS = {
 local keyVerified = false
 local SAVE_FILE = "KKHub_KeyData.txt"
 
--- 저장된 키가 있는지 확인하여 자동 인증 처리
+-- 저장된 키가 있는지 확인하여 자동 인증 처리 (공백 제거 적용으로 안정성 강화)
 if isfile and readfile then
     local success, content = pcall(function()
         if isfile(SAVE_FILE) then
@@ -53,6 +53,7 @@ if isfile and readfile then
         end
     end)
     if success and content then
+        content = content:gsub("%s+", "")
         for _, k in ipairs(VALID_KEYS) do
             if content == k then
                 keyVerified = true
@@ -64,7 +65,6 @@ end
 
 -- 저장된 올바른 키가 없을 때만 키 시스템 UI 생성
 if not keyVerified then
-    -- 기존 키 UI 중복 방지
     if ProtectedGui:FindFirstChild("KKHub_KeySystem") then
         ProtectedGui.KKHub_KeySystem:Destroy()
     end
@@ -78,7 +78,6 @@ if not keyVerified then
     KeyScreenGui.ResetOnSpawn = false
     protectAndParent(KeyScreenGui)
 
-    -- 메인 키 시스템 창
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.Parent = KeyScreenGui
@@ -92,7 +91,6 @@ if not keyVerified then
     UICorner.CornerRadius = UDim.new(0, 8)
     UICorner.Parent = MainFrame
 
-    -- 타이틀
     local TitleLabel = Instance.new("TextLabel")
     TitleLabel.Parent = MainFrame
     TitleLabel.BackgroundTransparency = 1
@@ -103,7 +101,6 @@ if not keyVerified then
     TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     TitleLabel.TextSize = 18
 
-    -- 안내 문구
     local DescLabel = Instance.new("TextLabel")
     DescLabel.Parent = MainFrame
     DescLabel.BackgroundTransparency = 1
@@ -114,7 +111,6 @@ if not keyVerified then
     DescLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
     DescLabel.TextSize = 13
 
-    -- 키 입력 박스 (TextBox)
     local KeyTextBox = Instance.new("TextBox")
     KeyTextBox.Name = "KeyTextBox"
     KeyTextBox.Parent = MainFrame
@@ -132,7 +128,6 @@ if not keyVerified then
     BoxCorner.CornerRadius = UDim.new(0, 6)
     BoxCorner.Parent = KeyTextBox
 
-    -- 인증 버튼 (Submit)
     local SubmitButton = Instance.new("TextButton")
     SubmitButton.Name = "SubmitButton"
     SubmitButton.Parent = MainFrame
@@ -150,7 +145,7 @@ if not keyVerified then
     BtnCorner.Parent = SubmitButton
 
     SubmitButton.MouseButton1Click:Connect(function()
-        local enteredKey = KeyTextBox.Text
+        local enteredKey = KeyTextBox.Text:gsub("%s+", "")
         local isMatch = false
         
         for _, k in ipairs(VALID_KEYS) do
@@ -161,7 +156,6 @@ if not keyVerified then
         end
         
         if isMatch then
-            -- 인증 성공 시 키 파일에 자동 저장
             if writefile then
                 pcall(function()
                     writefile(SAVE_FILE, enteredKey)
@@ -194,7 +188,69 @@ repeat task.wait(0.1) until keyVerified
 loadstring(game:HttpGet("https://raw.githubusercontent.com/v889rfdv7z-lang/robloxrival-kkhub/refs/heads/main/robloxrival-kkhub.lua"))()
 
 -- ==========================================
--- [2] 'UI ON / UI OFF' 토글 및 안정성 최적화 스크립트
+-- [1.5] UI 'knife' -> '근접무기' 변경 및 랙 없는 최적화 Melee 패치
+-- ==========================================
+task.spawn(function()
+    task.wait(3)
+    pcall(function()
+        for _, root in ipairs({ProtectedGui, CoreGui, LocalPlayer:WaitForChild("PlayerGui")}) do
+            for _, obj in ipairs(root:GetDescendants()) do
+                if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+                    if obj.Text == "knife" or obj.Text == "Knife" then
+                        obj.Text = "근접무기"
+                    end
+                end
+            end
+        end
+    end)
+
+    local VirtualUser = game:GetService("VirtualUser")
+    while task.wait(0.2) do
+        pcall(function()
+            local character = LocalPlayer.Character
+            if not character then return end
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            local tool = character:FindFirstChildOfClass("Tool")
+            
+            if tool and humanoidRootPart then
+                local isMelee = false
+                local lowerName = tool.Name:lower()
+                if lowerName:find("melee") or lowerName:find("knife") or lowerName:find("sword") or lowerName:find("bat") or lowerName:find("fists") or lowerName:find("hammer") or not tool:FindFirstChild("Ammo") then
+                    isMelee = true
+                end
+                
+                if isMelee then
+                    for _, player in ipairs(Players:GetPlayers()) do
+                        if player ~= LocalPlayer and player.Character then
+                            local enemyHRP = player.Character:FindFirstChild("HumanoidRootPart")
+                            local enemyHumanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                            if enemyHRP and enemyHumanoid and enemyHumanoid.Health > 0 then
+                                local dist = (humanoidRootPart.Position - enemyHRP.Position).Magnitude
+                                if dist <= 22 then
+                                    if mouse1press and mouse1release then
+                                        mouse1press()
+                                        task.wait(0.04)
+                                        mouse1release()
+                                    elseif VirtualUser then
+                                        VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+                                        task.wait(0.04)
+                                        VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+                                    else
+                                        tool:Activate()
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- ==========================================
+-- [2] 'UI ON / UI OFF' 토글 (위치 고정형, 랙 최적화)
 -- ==========================================
 task.spawn(function()
     local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -230,29 +286,8 @@ task.spawn(function()
     UICorner.CornerRadius = UDim.new(0, 6)
     UICorner.Parent = ToggleButton
 
-    local dragging, dragStart, startPos
-    ToggleButton.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = ToggleButton.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
+    -- (드래그 이동 코드를 완전히 제거하여 버튼이 움직이지 않고 고정되도록 처리함)
 
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            ToggleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-
-    -- 캐싱을 적용하여 과부하와 튕김 현상 방지
     local targetGuis = {}
     local function getLionUIElements()
         if #targetGuis > 0 then return targetGuis end
